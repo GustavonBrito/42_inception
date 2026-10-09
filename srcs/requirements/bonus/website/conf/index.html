@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>42 Inception - Static Website</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <nav class="navbar">
+        <div class="container">
+            <div class="logo">42 Inception</div>
+            <ul class="nav-links">
+                <li><a href="#home" class="nav-link active" data-section="home">Home</a></li>
+                <li><a href="#about" class="nav-link" data-section="about">About</a></li>
+                <li><a href="#services" class="nav-link" data-section="services">Services</a></li>
+                <li><a href="#contact" class="nav-link" data-section="contact">Contact</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <section id="home" class="section active">
+        <div class="hero">
+            <div class="container">
+                <h1 class="hero-title">Welcome to 42 Inception</h1>
+                <p class="hero-subtitle">A Docker-based Infrastructure Project</p>
+                <button class="cta-button" onclick="scrollToSection('about')">Learn More</button>
+            </div>
+        </div>
+    </section>
+
+    <section id="about" class="section">
+        <div class="container">
+            <h2>About This Project</h2>
+            <div class="features">
+                <div class="feature-card">
+                    <div class="feature-icon">🐳</div>
+                    <h3>Docker Containers</h3>
+                    <p>Running multiple containerized services including Nginx, MariaDB, and WordPress.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🔒</div>
+                    <h3>Security</h3>
+                    <p>HTTPS enabled with SSL certificates for secure communication.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">⚡</div>
+                    <h3>Performance</h3>
+                    <p>Optimized with Redis caching and efficient database management.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🎯</div>
+                    <h3>Scalability</h3>
+                    <p>Built with Docker Compose for easy orchestration and deployment.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="services" class="section">
+        <div class="container">
+            <h2>Services</h2>
+            <div class="services-grid">
+                <div class="service-item">
+                    <h3>Nginx</h3>
+                    <p>Web server and reverse proxy on port 443 (HTTPS)</p>
+                </div>
+                <div class="service-item">
+                    <h3>WordPress</h3>
+                    <p>Content management system for blog and website</p>
+                </div>
+                <div class="service-item">
+                    <h3>MariaDB</h3>
+                    <p>Database server on port 3306 for data storage</p>
+                </div>
+                <div class="service-item">
+                    <h3>Redis</h3>
+                    <p>In-memory cache on port 6379 for performance</p>
+                </div>
+                <div class="service-item">
+                    <h3>Adminer</h3>
+                    <p>Database management tool on port 8080</p>
+                </div>
+                <div class="service-item">
+                    <h3>VSFTPD</h3>
+                    <p>FTP server on port 21 for file transfer</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="contact" class="section">
+        <div class="container">
+            <h2>Contact</h2>
+            <div class="contact-info">
+                <p><strong>Project:</strong> 42 Inception</p>
+                <p><strong>Status:</strong> <span class="status-badge">Running</span></p>
+                <p><strong>Environment:</strong> Docker Compose with Alpine Linux</p>
+                <div class="stats">
+                    <div class="stat">
+                        <div class="stat-number" id="uptime">0</div>
+                        <div class="stat-label">Services Active</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-number" id="requests">0</div>
+                        <div class="stat-label">Page Visits</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2026 42 Inception Project. All rights reserved.</p>
+            <p>Built with Docker 🐳 and Alpine Linux</p>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+
+</html>
