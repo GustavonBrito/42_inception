@@ -1,35 +1,40 @@
-name = inception
-all:
-	@printf "Launch configuration ${name}...\n"
-	@bash srcs/requirements/wordpress/tools/make_dir.sh
-	@docker compose -f ./srcs/docker-compose.yml --env-file srcs/.env up -d
+NAME     = inception
+COMPOSE  = docker compose -f srcs/docker-compose.yml
+SETUP    = sh srcs/requirements/tools/setup.sh
 
-build:
-	@printf "Building configuration ${name}...\n"
-	@bash srcs/requirements/wordpress/tools/make_dir.sh
-	@docker compose -f ./srcs/docker-compose.yml --env-file srcs/.env up -d --build
+all: setup
+	@$(COMPOSE) up -d --build
+
+setup:
+	@$(SETUP)
+
+up: setup
+	@$(COMPOSE) up -d
 
 down:
-	@printf "Stopping configuration ${name}...\n"
-	@docker compose -f ./srcs/docker-compose.yml --env-file srcs/.env down
+	@$(COMPOSE) down
 
-re: down
-	@printf "Rebuild configuration ${name}...\n"
-	@docker compose -f ./srcs/docker-compose.yml --env-file srcs/.env up -d --build
+stop:
+	@$(COMPOSE) stop
 
-clean: down
-	@printf "Cleaning configuration ${name}...\n"
-	@docker system prune -a
-	@sudo rm -rf ~/data/wordpress/*
-	@sudo rm -rf ~/data/mariadb/*
+start:
+	@$(COMPOSE) start
 
+ps:
+	@$(COMPOSE) ps
+
+logs:
+	@$(COMPOSE) logs --tail=50
+
+re: down all
+
+# removes the containers, the network and the images of this project only
+clean:
+	@$(COMPOSE) down --rmi all
+
+# same as clean, plus the volumes and the data stored on the host
 fclean:
-	@printf "Total clean of all configurations docker\n"
-	@docker stop $$(docker ps -qa)
-	@docker system prune --all --force --volumes
-	@docker network prune --force
-	@docker volume prune --force
-	@sudo rm -rf ~/data/wordpress/*
-	@sudo rm -rf ~/data/mariadb/*
+	@$(COMPOSE) down --rmi all --volumes
+	@$(SETUP) wipe
 
-.PHONY	: all build down re clean fclean
+.PHONY: all setup up down stop start ps logs re clean fclean

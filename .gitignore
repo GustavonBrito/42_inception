@@ -1,1 +1,6 @@
+# credentials and local configuration never go to git
 .env
+secrets/
+*.key
+*.crt
+*.pem

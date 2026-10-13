@@ -1,153 +1,185 @@
-# 42_inception
+*This project has been created as part of the 42 curriculum by gserafio.*
 
-Infraestrutura com Docker Compose: **NGINX (TLS) + WordPress (php-fpm) + MariaDB**, mais os bônus **Redis, vsftpd (FTP), Adminer e um site estático**. Todas as imagens são construídas a partir de `alpine:3.16`.
+# Inception
 
----
+## Description
 
-## 1. Pré-requisitos (num computador novo)
+Inception is a system administration project: a small web infrastructure built
+with Docker Compose, where every service runs in its own container and every
+image is built from a Dockerfile written for this project. No ready-made image
+is pulled, apart from the Alpine base.
 
-| O quê | Por quê |
-|---|---|
-| Docker Engine + plugin `docker compose` (v2) | O Makefile usa `docker compose` (com espaço), não `docker-compose` |
-| `make`, `bash`, `sudo` | O Makefile chama `bash` e `sudo rm` nos alvos de limpeza |
-| Usuário no grupo `docker` | Para rodar `docker` sem sudo: `sudo usermod -aG docker $USER` e depois **fazer logout/login** |
-| Internet no build | Os Dockerfiles baixam pacotes `apk`, o WordPress (`wordpress.org/latest.zip`) e o Adminer (GitHub) |
-| Portas livres: **443, 80, 3306, 6379, 21, 8080** | Se a máquina tiver apache/nginx/mysql/redis locais rodando, pare-os antes (`sudo systemctl stop apache2 mysql ...`) |
+The goal is to understand what a container really is by assembling the pieces
+by hand: a web server, an application server and a database that only talk to
+each other through a private network, with the data kept in volumes so it
+survives the containers.
 
-```bash
-# Ubuntu/Debian
-sudo apt install make docker.io docker-compose-v2   # ou instale o Docker pelo site oficial
-sudo usermod -aG docker $USER                       # depois logout/login
+### What is in the stack
+
+| Service | Role | Reachable from the host |
+|---|---|---|
+| `nginx` | TLS termination, the only entry point of the site | `443` |
+| `wordpress` | WordPress running on php-fpm, no web server inside | no |
+| `mariadb` | Database of the site | no |
+| `redis` (bonus) | Object cache for WordPress | no |
+| `vsftpd` (bonus) | FTP access to the WordPress files | `21`, `21100-21104` |
+| `adminer` (bonus) | Web interface for the database | `8080` |
+| `website` (bonus) | Static site (HTML, CSS and JavaScript) | `8081` |
+
+```
+                 host
+   443 ──────────┐
+                 ▼
+              ┌───────┐  fastcgi :9000  ┌───────────┐  :3306  ┌─────────┐
+              │ nginx │ ───────────────▶│ wordpress │────────▶│ mariadb │
+              └───────┘                 └───────────┘         └─────────┘
+                  │                       │       │                │
+                  └── volume wordpress ───┘       └─▶ redis        └── volume mariadb
 ```
 
----
+### Design choices
 
-## 2. Passo a passo para rodar
+- **Base image.** Every Dockerfile starts from `alpine:3.23`, the penultimate
+  stable release when the project was written. The tag is fixed, `latest` is
+  never used, and the versions of WordPress, WP-CLI, Adminer and the cache
+  plugin are fixed as build arguments.
+- **Configuration at start, not at build.** The images hold only software.
+  The database, `wp-config.php`, the WordPress installation and the TLS
+  certificate are created by each container's entrypoint the first time it
+  starts, so no password is ever stored in an image layer and the same image
+  works for any domain.
+- **One process per container, in the foreground.** Each entrypoint ends with
+  `exec`, so the daemon becomes PID 1 and receives the stop signals. There is
+  no `tail -f`, `sleep infinity` or shell loop keeping a container alive.
+- **Start order.** `mariadb` has a healthcheck and `wordpress` waits for it
+  with `depends_on: condition: service_healthy`. Every service uses
+  `restart: always`.
+- **Sources.** `srcs/docker-compose.yml` describes the stack and
+  `srcs/requirements/<service>/` holds one directory per service with its
+  `Dockerfile`, a `conf/` directory for configuration files and a `tools/`
+  directory for scripts.
 
-```bash
-git clone https://github.com/Projetos-Pessoais-gbrito/42_inception.git
+### Virtual machines vs Docker
+
+A virtual machine emulates hardware and boots a complete operating system with
+its own kernel; it is strongly isolated, but takes gigabytes of disk and tens
+of seconds to start. A container is an ordinary process of the host, isolated
+by kernel features (namespaces and cgroups) and sharing the host kernel; it
+starts in milliseconds and its image contains only the program and its
+libraries. This project uses containers because each service is a single
+program, and it runs inside a virtual machine because the subject asks for an
+environment where the student is free to administer Docker.
+
+### Secrets vs environment variables
+
+Environment variables are visible to anyone who can run `docker inspect` and
+are inherited by every child process, so they are used here only for values
+that are not sensitive: domain name, database name, user names. Passwords are
+Docker secrets: files kept outside git in `secrets/`, mounted read-only at
+`/run/secrets/<name>` only in the containers that need them, and read by the
+entrypoint when it is required.
+
+### Docker network vs host network
+
+With `network: host` a container shares the network stack of the host: every
+port it opens is open on the machine and there is no isolation between
+services. This project uses a user-defined bridge network, `inception`.
+Containers reach each other by service name through Docker's internal DNS
+(`wordpress:9000`, `mariadb:3306`), and only the ports published explicitly
+exist on the host. That is why the database cannot be reached from outside.
+
+### Docker volumes vs bind mounts
+
+A bind mount maps a host path directly into a container: simple, but tied to
+the layout of that machine and not managed by Docker. A named volume is
+created and listed by Docker (`docker volume ls`) and can be shared between
+services by name. The subject requires named volumes whose data lives in
+`/home/<login>/data`, so the two volumes of the project are named volumes of
+the `local` driver configured to store their data in that directory:
+`wordpress` for the site files and `mariadb` for the database.
+
+## Instructions
+
+### Requirements
+
+- Linux with Docker Engine and the Docker Compose plugin
+- `make`
+- The user must be allowed to run `docker` (member of the `docker` group)
+
+### 1. Point the domain to the machine
+
+```sh
+sudo sh -c 'echo "127.0.0.1 gserafio.42.fr" >> /etc/hosts'
+```
+
+### 2. Build and start
+
+```sh
+git clone https://github.com/GustavonBrito/42_inception.git
 cd 42_inception
+make
 ```
 
-### 2.1 Conferir o `srcs/.env`
-O arquivo **`srcs/.env` é obrigatório** (o compose lê as variáveis dele). Ele está versionado no repo, mesmo estando no `.gitignore` (foi adicionado antes do ignore). Conteúdo esperado:
+The first `make` creates what is not stored in git:
 
-```env
-DB_NAME=wordpress
-DB_ROOT=rootpass
-DB_USER=wpuser
-DB_PASS=wppass
-FTP_USR=ftpuser
-FTP_PWD=ftppass
-```
+- `srcs/.env`, copied from `srcs/.env.example`;
+- `secrets/*.txt`, one random password per file;
+- the data directories `/home/<user>/data/wordpress` and `/home/<user>/data/mariadb`.
 
-> `DOMAIN_NAME`, `CERT_` e `KEY_` existem no `.env` mas **não são usados** por nada — o domínio e o certificado estão escritos direto no `nginx.conf`.
+To choose your own values, create `srcs/.env` and the files in `secrets/`
+before running `make`: existing files are never overwritten.
 
-### 2.2 Apontar o domínio para a máquina local
-O NGINX responde em **`gserafio.42.sp`**. Adicione no `/etc/hosts`:
+### 3. Open the site
 
-```bash
-echo "127.0.0.1 gserafio.42.sp" | sudo tee -a /etc/hosts
-```
+- Site: <https://gserafio.42.fr>
+- Administration: <https://gserafio.42.fr/wp-admin>
 
-### 2.3 Subir
+The certificate is self-signed, so the browser asks for confirmation the first
+time.
 
-```bash
-make build     # primeira vez: cria ~/data/{mariadb,wordpress} e faz build de tudo
-# nas próximas vezes:
-make           # sobe sem rebuildar
-```
+### Make targets
 
-### 2.4 Acessar
-
-| Serviço | URL / comando |
+| Target | Effect |
 |---|---|
-| WordPress (via NGINX, TLS) | https://gserafio.42.sp |
-| Site estático (bônus) | http://localhost |
-| Adminer (bônus) | http://localhost:8080 — servidor `mariadb`, usuário `wpuser`, senha `wppass`, base `wordpress` |
-| FTP (bônus) | `ftp localhost 21` — usuário `ftpuser`, senha `ftppass` (cai em `/var/www`, os arquivos do WordPress) |
-| Redis (bônus) | `docker exec -it redis redis-cli ping` → `PONG` |
-| MariaDB | `docker exec -it mariadb mysql -u wpuser -pwppass wordpress` |
+| `make` | create missing configuration, build the images, start everything |
+| `make up` | start without rebuilding |
+| `make down` | stop and remove the containers and the network; data is kept |
+| `make stop` / `make start` | pause and resume the containers |
+| `make ps` / `make logs` | state and last log lines of the services |
+| `make re` | `down` followed by `make` |
+| `make clean` | `down` and remove the images of this project |
+| `make fclean` | `clean`, remove the volumes and **delete the site and database data** |
 
-Na **primeira vez** o WordPress abre o assistente de instalação (`wp-admin/install.php`) — crie o site e o usuário admin por lá (não há wp-cli automatizando isso). Para o Redis ser usado de verdade pelo WordPress, instale e ative o plugin **Redis Object Cache** no painel (o `wp-config.php` já tem `WP_REDIS_HOST=redis`).
+More detail is in [USER_DOC.md](USER_DOC.md) for people using the stack and in
+[DEV_DOC.md](DEV_DOC.md) for people changing it.
 
----
+## Resources
 
-## 3. Comandos do Makefile
+### References
 
-| Alvo | O que faz |
-|---|---|
-| `make` / `make all` | Cria `~/data` (se não existir) e `docker compose up -d` |
-| `make build` | Igual, mas com `--build` |
-| `make down` | Para e remove os containers |
-| `make re` | `down` + `up -d --build` |
-| `make clean` | `down` + `docker system prune -a` (**pede confirmação**) + `sudo rm -rf ~/data/wordpress/* ~/data/mariadb/*` |
-| `make fclean` | Para **todos** os containers da máquina e apaga **todas** as imagens/volumes/redes Docker + os dados em `~/data` |
+- [Docker documentation](https://docs.docker.com/): Dockerfile reference,
+  Compose file reference, networking, volumes and secrets
+- [Dockerfile best practices](https://docs.docker.com/build/building/best-practices/)
+- [NGINX documentation](https://nginx.org/en/docs/), in particular
+  `ngx_http_ssl_module` and `ngx_http_fastcgi_module`
+- [MariaDB Knowledge Base](https://mariadb.com/kb/en/), `mariadb-install-db`
+  and account management
+- [WordPress developer handbook](https://developer.wordpress.org/advanced-administration/)
+  and [WP-CLI commands](https://developer.wordpress.org/cli/commands/)
+- [PHP-FPM configuration](https://www.php.net/manual/en/install.fpm.configuration.php)
+- [Alpine Linux packages](https://pkgs.alpinelinux.org/packages) and
+  [release branches](https://alpinelinux.org/releases/)
+- [vsftpd.conf manual](https://security.appspot.com/vsftpd/vsftpd_conf.html)
+- [Redis Object Cache plugin](https://wordpress.org/plugins/redis-cache/)
 
-> ⚠️ `fclean` não é só deste projeto: ele derruba e apaga tudo de Docker na máquina.
+### Use of AI
 
----
+An AI assistant was used in three parts of the project:
 
-## 4. Estrutura
+- checking the repository against the evaluation checklist to find what did
+  not comply;
+- reworking the Dockerfiles, the entrypoint scripts and the Compose file so
+  that configuration and passwords are handled when the containers start;
+- drafting this README and the two documentation files.
 
-```
-42_inception/
-├── Makefile
-└── srcs/
-    ├── .env                         # variáveis (DB, FTP)
-    ├── docker-compose.yml
-    └── requirements/
-        ├── nginx/      Dockerfile, conf/nginx.conf, tools/ (cert + key usados pelo nginx)
-        ├── mariadb/    Dockerfile, conf/create_db.sh
-        ├── wordpress/  Dockerfile, conf/wp-config-create.sh, tools/make_dir.sh
-        ├── tools/      cópia do cert + key (não montada em nenhum container)
-        └── bonus/      redis/, vsftpd/, adminer/, website/
-```
-
-Como as peças se conectam:
-
-- **nginx** (porta 443, só TLSv1.2/1.3) → serve `/var/www` e manda os `.php` para `wordpress:9000` (php-fpm).
-- **wordpress** → fala com `mariadb:3306` e com `redis:6379`.
-- **nginx**, **wordpress** e **vsftpd** compartilham o volume `wp-volume` (= `~/data/wordpress`).
-- **mariadb** guarda os dados em `db-volume` (= `~/data/mariadb`).
-- Todos ficam na rede bridge `inception`, exceto o `website`, que é isolado.
-- `nginx.conf` e o certificado são montados do host (`./requirements/nginx/conf` e `./requirements/nginx/tools`), então dá para editar sem rebuildar — basta `docker restart nginx`.
-
----
-
-## 5. Pontos de atenção num computador diferente
-
-1. **Volumes em `/home/$USER/data`** — o compose usa `${USER}` no caminho. Se você rodar com `sudo make`, `$USER` vira `root` e o caminho quebra. Rode como seu usuário normal.
-2. **Dados antigos em `~/data`** — os scripts só criam o banco/`wp-config.php` se ainda não existirem. Se mudar senhas no `.env`, apague `~/data/mariadb/*` e `~/data/wordpress/*` (`make clean`) e faça `make build`, senão os dados velhos continuam valendo.
-3. **`make_dir.sh` só cria as subpastas se `~/data` não existir.** Se `~/data` já existir sem `mariadb/` e `wordpress/`, crie na mão: `mkdir -p ~/data/mariadb ~/data/wordpress`.
-4. **Certificado** — o `.crt`/`.key` foram gerados com **mkcert** nesta máquina (válidos até 07/2028). Em outro computador o navegador vai mostrar aviso de "não seguro" (é só aceitar). Para regenerar:
-   ```bash
-   # com mkcert (sem aviso no navegador)
-   mkcert -install
-   mkcert -cert-file srcs/requirements/nginx/tools/gserafio.42.sp.crt \
-          -key-file  srcs/requirements/nginx/tools/gserafio.42.sp.key gserafio.42.sp
-   # ou com openssl (autoassinado)
-   openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-     -keyout srcs/requirements/nginx/tools/gserafio.42.sp.key \
-     -out    srcs/requirements/nginx/tools/gserafio.42.sp.crt -subj "/CN=gserafio.42.sp"
-   ```
-5. **Mudar o login/domínio** — está fixo como `gserafio.42.sp` em `nginx.conf` (`server_name` e caminhos do certificado) e nos nomes dos arquivos em `nginx/tools/`. Mude os três juntos + `/etc/hosts`.
-6. **Senha do root do MariaDB** — o `mariadb/Dockerfile` não declara `ARG DB_ROOT`, então o `ALTER USER root` roda com senha vazia. Para entrar como root: `docker exec -it mariadb mysql -u root`. Se quiser corrigir, adicione `DB_ROOT` na linha `ARG` do Dockerfile.
-7. **FTP em modo passivo** — só a porta 21 está publicada. Se um cliente FTP gráfico travar ao listar arquivos, use modo ativo ou teste por dentro do container.
-8. **Alpine 3.16 está em fim de vida** — se algum dia o `apk` falhar ao baixar pacotes, troque o `FROM` para uma versão mais nova (atenção: os nomes `php8`/`php-fpm8` mudam em versões novas).
-9. **Senhas no repo** — o `.env` e a chave privada estão commitados. São só valores de teste/locais; não reutilize em nada real.
-
----
-
-## 6. Debug rápido
-
-```bash
-docker ps                          # todos os 7 containers devem estar "Up"
-docker compose -f srcs/docker-compose.yml logs -f <servico>
-docker exec -it <container> sh     # entrar no container
-curl -vk https://gserafio.42.sp    # testar TLS / NGINX
-```
-
-- **502 Bad Gateway** → o `wordpress` (php-fpm) não está de pé: veja `docker logs wordpress`.
-- **"Error establishing a database connection"** → `mariadb` caiu ou os dados em `~/data/mariadb` são de um `.env` antigo (ver item 5.2).
-- **"port is already allocated"** → algum serviço do host está usando a porta (ver pré-requisitos).
+Every suggestion was run and checked on a live stack before being kept.
